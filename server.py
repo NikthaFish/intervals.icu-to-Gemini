@@ -1,5 +1,3 @@
-import json
-import os
 from datetime import datetime, timedelta
 # pyrefly: ignore [missing-import]
 import httpx
