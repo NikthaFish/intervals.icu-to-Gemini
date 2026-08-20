@@ -158,7 +158,7 @@ if prompt := st.chat_input("Ask your coach..."):
         with st.spinner("Analyzing training data..."):
             try:
                 response = client.models.generate_content(
-                    model="gemini-2.5-flash",
+                    model="gemini-2.0-flash",
                     contents=prompt,
                     config=config,
                 )
