@@ -3,18 +3,21 @@ from datetime import datetime, timedelta
 import httpx
 from mcp.server.fastmcp import FastMCP
 
-# Initialize MCP Server
+# Initialize FastMCP
 mcp = FastMCP("IntervalsICU-Coach")
 
-ATHLETE_ID = os.getenv("INTERVALS_ATHLETE_ID")
-API_KEY = os.getenv("INTERVALS_API_KEY")
+ATHLETE_ID = os.getenv("INTERVALS_ATHLETE_ID", "")
+API_KEY = os.getenv("INTERVALS_API_KEY", "")
 BASE_URL = f"https://intervals.icu/api/v1/athlete/{ATHLETE_ID}"
 AUTH = ("API_KEY", API_KEY)
 
 
 @mcp.tool()
 async def get_recent_activities(days: int = 7) -> str:
-    """Fetches completed activities (cycling, running, etc.) for the last N days with key metrics (Power, HR, Load, Form)."""
+    """Fetches completed activities for the last N days with key metrics (Power, HR, Load, RPE)."""
+    if not ATHLETE_ID or not API_KEY:
+        return "Error: INTERVALS_ATHLETE_ID or INTERVALS_API_KEY is not set."
+
     oldest = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
     newest = datetime.now().strftime("%Y-%m-%d")
     url = f"{BASE_URL}/activities?oldest={oldest}&newest={newest}"
@@ -42,6 +45,9 @@ async def get_recent_activities(days: int = 7) -> str:
 @mcp.tool()
 async def get_fitness_and_load() -> str:
     """Retrieves current fitness (CTL), fatigue (ATL), and form/freshness (TSB) metrics."""
+    if not ATHLETE_ID or not API_KEY:
+        return "Error: INTERVALS_ATHLETE_ID or INTERVALS_API_KEY is not set."
+
     today = datetime.now().strftime("%Y-%m-%d")
     url = f"{BASE_URL}/wellness/{today}"
 
@@ -57,17 +63,17 @@ async def get_fitness_and_load() -> str:
             f"- **Fatigue (ATL)**: {data.get('atl', 'N/A')}\n"
             f"- **Form (TSB / Ramp)**: {data.get('rampRate', 'N/A')}\n"
             f"- **Resting HR**: {data.get('restingHR', 'N/A')} bpm\n"
-            f"- **HRV (SDNN / rMSSD)**: {data.get('hrv', 'N/A')}\n"
+            f"- **HRV**: {data.get('hrv', 'N/A')}\n"
             f"- **Sleep Quality**: {data.get('sleepQuality', 'N/A')}/5"
         )
 
 
 @mcp.tool()
 async def schedule_workout(date: str, name: str, workout_description: str) -> str:
-    """
-    Schedules a structured workout to the Intervals.icu calendar (pushes to COROS).
-    'date' format: YYYY-MM-DD
-    """
+    """Schedules a structured workout to the Intervals.icu calendar."""
+    if not ATHLETE_ID or not API_KEY:
+        return "Error: INTERVALS_ATHLETE_ID or INTERVALS_API_KEY is not set."
+
     url = f"{BASE_URL}/events"
     payload = {
         "start_date_local": f"{date}T08:00:00",
@@ -85,5 +91,12 @@ async def schedule_workout(date: str, name: str, workout_description: str) -> st
 
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 8080))
-    # Binds to 0.0.0.0 so cloud providers can route external traffic
-    mcp.run(transport="sse", host="0.0.0.0", port=port)
+    mcp.settings.host = "0.0.0.0"
+    mcp.settings.port = port
+    try:
+        # Disable strict localhost check so Railway public proxy can route to it
+        mcp.settings.transport_security.enable_dns_rebinding_protection = False
+    except Exception:
+        pass
+
+    mcp.run(transport="sse")
