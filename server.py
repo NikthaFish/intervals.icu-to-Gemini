@@ -1,14 +1,18 @@
+import json
 import os
 from datetime import datetime, timedelta
+# pyrefly: ignore [missing-import]
 import httpx
+# pyrefly: ignore [missing-import]
 from mcp.server.fastmcp import FastMCP
+# pyrefly: ignore [missing-import]
 from mcp.server.sse import SseServerTransport
-from starlette.applications import Starlette
-from starlette.responses import JSONResponse
-from starlette.routing import Route
+# pyrefly: ignore [missing-import]
 import uvicorn
 
-# 1. Initialize FastMCP
+# ---------------------------------------------------------
+# 1. Intervals.icu Configuration & FastMCP Setup
+# ---------------------------------------------------------
 mcp = FastMCP("IntervalsICU-Coach")
 
 ATHLETE_ID = os.getenv("INTERVALS_ATHLETE_ID", "")
@@ -19,9 +23,9 @@ AUTH = ("API_KEY", API_KEY)
 
 @mcp.tool()
 async def get_recent_activities(days: int = 7) -> str:
-    """Fetches completed activities for the last N days with key metrics (Power, HR, Load, RPE)."""
+    """Fetches completed activities (cycling, running) for the last N days with power, heart rate, load, and RPE."""
     if not ATHLETE_ID or not API_KEY:
-        return "Error: INTERVALS_ATHLETE_ID or INTERVALS_API_KEY is not set."
+        return "Error: INTERVALS_ATHLETE_ID or INTERVALS_API_KEY environment variables are missing."
 
     oldest = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
     newest = datetime.now().strftime("%Y-%m-%d")
@@ -34,13 +38,13 @@ async def get_recent_activities(days: int = 7) -> str:
 
         activities = response.json()
         if not activities:
-            return "No activities found in the selected date range."
+            return f"No activities found in the last {days} days."
 
         summary = []
         for act in activities:
             summary.append(
                 f"- **Date**: {act.get('start_date_local', 'N/A')[:10]} | **Type**: {act.get('type')} | **Name**: {act.get('name')}\n"
-                f"  Duration: {round(act.get('moving_time', 0)/60, 1)}m | Load/TSS: {act.get('icu_training_load', 'N/A')} | "
+                f"  Duration: {round(act.get('moving_time', 0)/60, 1)} min | Load/TSS: {act.get('icu_training_load', 'N/A')} | "
                 f"Avg Power: {act.get('icu_weighted_avg_watts', 'N/A')}W | Avg HR: {act.get('average_heartrate', 'N/A')} bpm\n"
                 f"  RPE: {act.get('perceived_exertion', 'N/A')} | Feel: {act.get('feel', 'N/A')}"
             )
@@ -48,10 +52,10 @@ async def get_recent_activities(days: int = 7) -> str:
 
 
 @mcp.tool()
-async def get_fitness_and_load() -> str:
-    """Retrieves current fitness (CTL), fatigue (ATL), and form/freshness (TSB) metrics."""
+async def get_wellness_and_load() -> str:
+    """Retrieves current fitness (CTL), fatigue (ATL), form (TSB), resting HR, HRV, and sleep metrics."""
     if not ATHLETE_ID or not API_KEY:
-        return "Error: INTERVALS_ATHLETE_ID or INTERVALS_API_KEY is not set."
+        return "Error: INTERVALS_ATHLETE_ID or INTERVALS_API_KEY environment variables are missing."
 
     today = datetime.now().strftime("%Y-%m-%d")
     url = f"{BASE_URL}/wellness/{today}"
@@ -66,18 +70,23 @@ async def get_fitness_and_load() -> str:
             f"### Athlete Status for {today}:\n"
             f"- **Fitness (CTL)**: {data.get('ctl', 'N/A')}\n"
             f"- **Fatigue (ATL)**: {data.get('atl', 'N/A')}\n"
-            f"- **Form (TSB / Ramp)**: {data.get('rampRate', 'N/A')}\n"
-            f"- **Resting HR**: {data.get('restingHR', 'N/A')} bpm\n"
+            f"- **Form (TSB / Ramp Rate)**: {data.get('rampRate', 'N/A')}\n"
+            f"- **Resting Heart Rate**: {data.get('restingHR', 'N/A')} bpm\n"
             f"- **HRV**: {data.get('hrv', 'N/A')}\n"
             f"- **Sleep Quality**: {data.get('sleepQuality', 'N/A')}/5"
         )
 
 
 @mcp.tool()
-async def schedule_workout(date: str, name: str, workout_description: str) -> str:
-    """Schedules a structured workout to the Intervals.icu calendar."""
+async def schedule_workout(
+    date: str, name: str, workout_description: str
+) -> str:
+    """
+    Schedules a structured workout to the Intervals.icu calendar (syncs to COROS).
+    'date' format: YYYY-MM-DD
+    """
     if not ATHLETE_ID or not API_KEY:
-        return "Error: INTERVALS_ATHLETE_ID or INTERVALS_API_KEY is not set."
+        return "Error: INTERVALS_ATHLETE_ID or INTERVALS_API_KEY environment variables are missing."
 
     url = f"{BASE_URL}/events"
     payload = {
@@ -94,41 +103,79 @@ async def schedule_workout(date: str, name: str, workout_description: str) -> st
         return f"Failed to schedule workout: {response.text}"
 
 
-# 2. Setup standard MCP SSE transport
-sse = SseServerTransport("/messages")
+# ---------------------------------------------------------
+# 2. Rock-Solid ASGI Router with Lifespan & Health Check
+# ---------------------------------------------------------
+sse = SseServerTransport("/messages/")
 
 
-async def handle_sse(request):
-    async with sse.connect_sse(
-        request.scope, request.receive, request._send
-    ) as streams:
-        await mcp._mcp_server.run(
-            streams[0],
-            streams[1],
-            mcp._mcp_server.create_initialization_options(),
-        )
+async def app(scope, receive, send):
+    """Raw ASGI application supporting Lifespan, Health Check, and MCP SSE."""
+    # Handle cloud lifespan events (prevents container hangs on boot/shutdown)
+    if scope["type"] == "lifespan":
+        while True:
+            message = await receive()
+            if message["type"] == "lifespan.startup":
+                await send({"type": "lifespan.startup.complete"})
+            elif message["type"] == "lifespan.shutdown":
+                await send({"type": "lifespan.shutdown.complete"})
+                return
 
+    if scope["type"] == "http":
+        path = scope["path"]
+        method = scope["method"]
 
-async def handle_messages(request):
-    await sse.handle_post_message(
-        request.scope, request.receive, request._send
+        # 1. Health Check Endpoint (Satisfies Railway & Render automated pings)
+        if path == "/" and method == "GET":
+            body = json.dumps(
+                {"status": "healthy", "service": "Intervals.icu MCP Server"}
+            ).encode("utf-8")
+            await send(
+                {
+                    "type": "http.response.start",
+                    "status": 200,
+                    "headers": [
+                        [b"content-type", b"application/json"],
+                        [b"content-length", str(len(body)).encode("utf-8")],
+                    ],
+                }
+            )
+            await send(
+                {"type": "http.response.body", "body": body, "more_body": False}
+            )
+            return
+
+        # 2. MCP SSE Connection Endpoint
+        if path == "/sse" and method == "GET":
+            async with sse.connect_sse(scope, receive, send) as streams:
+                await mcp._mcp_server.run(
+                    streams[0],
+                    streams[1],
+                    mcp._mcp_server.create_initialization_options(),
+                )
+            return
+
+        # 3. MCP Message Posting Endpoint
+        if path.startswith("/messages") and method == "POST":
+            await sse.handle_post_message(scope, receive, send)
+            return
+
+    # Fallback 404
+    body = b'{"error": "Not Found"}'
+    await send(
+        {
+            "type": "http.response.start",
+            "status": 404,
+            "headers": [
+                [b"content-type", b"application/json"],
+                [b"content-length", str(len(body)).encode("utf-8")],
+            ],
+        }
+    )
+    await send(
+        {"type": "http.response.body", "body": body, "more_body": False}
     )
 
-
-async def health_check(request):
-    return JSONResponse(
-        {"status": "healthy", "service": "Intervals.icu MCP"}
-    )
-
-
-# 3. Define routes for Starlette
-app = Starlette(
-    routes=[
-        Route("/", health_check, methods=["GET"]),
-        Route("/sse", handle_sse, methods=["GET"]),
-        Route("/messages", handle_messages, methods=["POST"]),
-    ]
-)
 
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 8080))
