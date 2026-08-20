@@ -1,91 +1,101 @@
 from datetime import datetime, timedelta
 import os
 # pyrefly: ignore [missing-import]
-from fastapi import FastAPI, Request
+from google import genai
 # pyrefly: ignore [missing-import]
-from fastapi.responses import Response
+from google.genai import types
 # pyrefly: ignore [missing-import]
 import httpx
 # pyrefly: ignore [missing-import]
-from mcp.server.fastmcp import FastMCP
-# pyrefly: ignore [missing-import]
-from mcp.server.sse import SseServerTransport
-# pyrefly: ignore [missing-import]
-import uvicorn
+import streamlit as st
 
-# 1. Initialize FastMCP
-mcp = FastMCP("IntervalsICU-Coach")
+# ---------------------------------------------------------
+# 1. Page Configuration & Title
+# ---------------------------------------------------------
+st.set_page_config(
+    page_title="Training Coach",
+    page_icon="🚴",
+    layout="centered",
+    initial_sidebar_state="collapsed",
+)
 
-ATHLETE_ID = os.getenv("INTERVALS_ATHLETE_ID", "")
-API_KEY = os.getenv("INTERVALS_API_KEY", "")
-BASE_URL = f"https://intervals.icu/api/v1/athlete/{ATHLETE_ID}"
-AUTH = ("API_KEY", API_KEY)
+st.title("🚴 Training Coach")
 
+# ---------------------------------------------------------
+# 2. Credentials & Setup (From Streamlit Secrets)
+# ---------------------------------------------------------
+GEMINI_API_KEY = st.secrets.get("GEMINI_API_KEY", os.getenv("GEMINI_API_KEY", ""))
+INTERVALS_API_KEY = st.secrets.get(
+    "INTERVALS_API_KEY", os.getenv("INTERVALS_API_KEY", "")
+)
+INTERVALS_ATHLETE_ID = st.secrets.get(
+    "INTERVALS_ATHLETE_ID", os.getenv("INTERVALS_ATHLETE_ID", "")
+)
 
-@mcp.tool()
-async def get_recent_activities(days: int = 7) -> str:
-    """Fetches completed activities (cycling, running) for the last N days with power, heart rate, load, and RPE."""
-    if not ATHLETE_ID or not API_KEY:
-        return "Error: INTERVALS_ATHLETE_ID or INTERVALS_API_KEY is not set."
+if not GEMINI_API_KEY or not INTERVALS_API_KEY or not INTERVALS_ATHLETE_ID:
+    st.error(
+        "⚠️ Missing API Keys! Please configure GEMINI_API_KEY, INTERVALS_API_KEY, and INTERVALS_ATHLETE_ID in Streamlit Secrets."
+    )
+    st.stop()
 
+BASE_URL = f"https://intervals.icu/api/v1/athlete/{INTERVALS_ATHLETE_ID}"
+AUTH = ("API_KEY", INTERVALS_API_KEY)
+
+# ---------------------------------------------------------
+# 3. Intervals.icu Live Tools
+# ---------------------------------------------------------
+def get_recent_activities(days: int = 7) -> str:
+    """Fetches completed activities (cycling, running, etc.) for the last N days with key metrics."""
     oldest = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
     newest = datetime.now().strftime("%Y-%m-%d")
     url = f"{BASE_URL}/activities?oldest={oldest}&newest={newest}"
 
-    async with httpx.AsyncClient() as client:
-        response = await client.get(url, auth=AUTH)
-        if response.status_code != 200:
-            return f"Error fetching activities: {response.text}"
-
-        activities = response.json()
+    try:
+        res = httpx.get(url, auth=AUTH, timeout=10.0)
+        if res.status_code != 200:
+            return f"Intervals.icu Error: {res.text}"
+        activities = res.json()
         if not activities:
-            return f"No activities found in the last {days} days."
+            return f"No activities recorded in the last {days} days."
 
         summary = []
-        for act in activities:
+        for a in activities:
             summary.append(
-                f"- **Date**: {act.get('start_date_local', 'N/A')[:10]} | **Type**: {act.get('type')} | **Name**: {act.get('name')}\n"
-                f"  Duration: {round(act.get('moving_time', 0)/60, 1)}m | Load/TSS: {act.get('icu_training_load', 'N/A')} | "
-                f"Avg Power: {act.get('icu_weighted_avg_watts', 'N/A')}W | Avg HR: {act.get('average_heartrate', 'N/A')} bpm\n"
-                f"  RPE: {act.get('perceived_exertion', 'N/A')} | Feel: {act.get('feel', 'N/A')}"
+                f"- **{a.get('start_date_local', 'N/A')[:10]}** | [{a.get('type')}] **{a.get('name')}**\n"
+                f"  Duration: {round(a.get('moving_time', 0)/60, 1)} min | Load/TSS: {a.get('icu_training_load', 'N/A')} | "
+                f"Avg Power: {a.get('icu_weighted_avg_watts', 'N/A')}W | HR: {a.get('average_heartrate', 'N/A')} bpm\n"
+                f"  RPE: {a.get('perceived_exertion', 'N/A')} | Feel: {a.get('feel', 'N/A')}"
             )
         return "\n\n".join(summary)
+    except Exception as e:
+        return f"Request failed: {str(e)}"
 
 
-@mcp.tool()
-async def get_fitness_and_load() -> str:
-    """Retrieves current fitness (CTL), fatigue (ATL), form (TSB), resting HR, HRV, and sleep."""
-    if not ATHLETE_ID or not API_KEY:
-        return "Error: INTERVALS_ATHLETE_ID or INTERVALS_API_KEY is not set."
-
+def get_fitness_and_wellness() -> str:
+    """Fetches today's Fitness (CTL), Fatigue (ATL), Form (TSB), Resting HR, HRV, and sleep."""
     today = datetime.now().strftime("%Y-%m-%d")
     url = f"{BASE_URL}/wellness/{today}"
 
-    async with httpx.AsyncClient() as client:
-        response = await client.get(url, auth=AUTH)
-        if response.status_code != 200:
-            return f"Error fetching wellness data: {response.text}"
-
-        data = response.json()
+    try:
+        res = httpx.get(url, auth=AUTH, timeout=10.0)
+        if res.status_code != 200:
+            return f"Intervals.icu Error: {res.text}"
+        data = res.json()
         return (
             f"### Athlete Status for {today}:\n"
             f"- **Fitness (CTL)**: {data.get('ctl', 'N/A')}\n"
             f"- **Fatigue (ATL)**: {data.get('atl', 'N/A')}\n"
-            f"- **Form (TSB / Ramp)**: {data.get('rampRate', 'N/A')}\n"
-            f"- **Resting HR**: {data.get('restingHR', 'N/A')} bpm\n"
+            f"- **Form (TSB / Ramp Rate)**: {data.get('rampRate', 'N/A')}\n"
+            f"- **Resting Heart Rate**: {data.get('restingHR', 'N/A')} bpm\n"
             f"- **HRV**: {data.get('hrv', 'N/A')}\n"
             f"- **Sleep Quality**: {data.get('sleepQuality', 'N/A')}/5"
         )
+    except Exception as e:
+        return f"Request failed: {str(e)}"
 
 
-@mcp.tool()
-async def schedule_workout(
-    date: str, name: str, workout_description: str
-) -> str:
-    """Schedules a structured workout to the Intervals.icu calendar (syncs to COROS)."""
-    if not ATHLETE_ID or not API_KEY:
-        return "Error: INTERVALS_ATHLETE_ID or INTERVALS_API_KEY is not set."
-
+def schedule_structured_workout(date: str, name: str, workout_description: str) -> str:
+    """Schedules a structured workout to the Intervals calendar (syncs to COROS). date format: YYYY-MM-DD."""
     url = f"{BASE_URL}/events"
     payload = {
         "start_date_local": f"{date}T08:00:00",
@@ -93,47 +103,69 @@ async def schedule_workout(
         "type": "Ride",
         "description": workout_description,
     }
-
-    async with httpx.AsyncClient() as client:
-        response = await client.post(url, auth=AUTH, json=payload)
-        if response.status_code in [200, 201]:
-            return f"Successfully scheduled '{name}' on {date}!"
-        return f"Failed to schedule workout: {response.text}"
-
-
-# 2. FastAPI Application
-app = FastAPI(title="Intervals.icu MCP Server")
-sse = SseServerTransport("/messages/")
+    try:
+        res = httpx.post(url, auth=AUTH, json=payload, timeout=10.0)
+        if res.status_code in [200, 201]:
+            return f"✅ Workout '{name}' scheduled for {date}!"
+        return f"Failed to schedule: {res.text}"
+    except Exception as e:
+        return f"Request failed: {str(e)}"
 
 
-@app.get("/")
-async def health_check():
-    """Railway health check endpoint."""
-    return {"status": "healthy", "service": "Intervals.icu MCP Server"}
+# ---------------------------------------------------------
+# 4. Coaching Brain & Persona
+# ---------------------------------------------------------
+SYSTEM_INSTRUCTION = """
+You are "Training Coach" with extensive experience coaching cyclists and triathletes, with a deep background in exercise science and sports nutrition.
+You specialize in helping time-crunched athletes who train 4-5 hours per week balance performance gains against life and family stress.
 
+Key coaching traits:
+1. Empathetic and understanding, but not afraid to push back when a workout plan or progression is unrealistic.
+2. Provide science-backed rationales for your recommendations.
+3. You have direct tool access to the athlete's live Intervals.icu account. Always call your tools to inspect recent activities, power numbers, HR data, or fatigue metrics before giving feedback on their workouts.
+4. Keep your responses actionable, concise, and structured for quick mobile reading.
+"""
 
-@app.get("/sse")
-async def handle_sse(request: Request):
-    """MCP SSE endpoint."""
-    async with sse.connect_sse(
-        request.scope, request.receive, request._send
-    ) as streams:
-        await mcp._mcp_server.run(
-            streams[0],
-            streams[1],
-            mcp._mcp_server.create_initialization_options(),
-        )
-    return Response()
+# ---------------------------------------------------------
+# 5. Mobile Chat Interface
+# ---------------------------------------------------------
+if "messages" not in st.session_state:
+    st.session_state.messages = []
 
+# Display conversation history
+for msg in st.session_state.messages:
+    with st.chat_message(msg["role"]):
+        st.markdown(msg["content"])
 
-@app.post("/messages/")
-async def handle_messages(request: Request):
-    """MCP Message transport."""
-    await sse.handle_post_message(
-        request.scope, request.receive, request._send
+# User Input
+if prompt := st.chat_input("Ask your coach..."):
+    # Append user message
+    st.session_state.messages.append({"role": "user", "content": prompt})
+    with st.chat_message("user"):
+        st.markdown(prompt)
+
+    # Initialize Gemini Client
+    client = genai.Client(api_key=GEMINI_API_KEY)
+    
+    # Configure Gemini with tools & system instruction
+    config = types.GenerateContentConfig(
+        system_instruction=SYSTEM_INSTRUCTION,
+        tools=[get_recent_activities, get_fitness_and_wellness, schedule_structured_workout],
+        temperature=0.7,
     )
 
-
-if __name__ == "__main__":
-    port = int(os.getenv("PORT", 8080))
-    uvicorn.run(app, host="0.0.0.0", port=port)
+    with st.chat_message("assistant"):
+        with st.spinner("Analyzing training data..."):
+            try:
+                response = client.models.generate_content(
+                    model="gemini-2.5-flash",
+                    contents=prompt,
+                    config=config,
+                )
+                response_text = response.text or "I've reviewed your request and updated your logs."
+                st.markdown(response_text)
+                st.session_state.messages.append({"role": "assistant", "content": response_text})
+            except Exception as e:
+                err_msg = f"Coach error: {str(e)}"
+                st.error(err_msg)
+                st.session_state.messages.append({"role": "assistant", "content": err_msg})
