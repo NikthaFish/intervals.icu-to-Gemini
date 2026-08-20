@@ -2,12 +2,13 @@ import os
 from datetime import datetime, timedelta
 import httpx
 from mcp.server.fastmcp import FastMCP
+from mcp.server.sse import SseServerTransport
 from starlette.applications import Starlette
 from starlette.responses import JSONResponse
-from starlette.routing import Mount, Route
+from starlette.routing import Route
 import uvicorn
 
-# 1. Initialize FastMCP Server
+# 1. Initialize FastMCP
 mcp = FastMCP("IntervalsICU-Coach")
 
 ATHLETE_ID = os.getenv("INTERVALS_ATHLETE_ID", "")
@@ -93,16 +94,39 @@ async def schedule_workout(date: str, name: str, workout_description: str) -> st
         return f"Failed to schedule workout: {response.text}"
 
 
-# 2. Health check route for Railway
+# 2. Setup standard MCP SSE transport
+sse = SseServerTransport("/messages")
+
+
+async def handle_sse(request):
+    async with sse.connect_sse(
+        request.scope, request.receive, request._send
+    ) as streams:
+        await mcp._mcp_server.run(
+            streams[0],
+            streams[1],
+            mcp._mcp_server.create_initialization_options(),
+        )
+
+
+async def handle_messages(request):
+    await sse.handle_post_message(
+        request.scope, request.receive, request._send
+    )
+
+
 async def health_check(request):
-    return JSONResponse({"status": "healthy", "service": "Intervals.icu MCP"})
+    return JSONResponse(
+        {"status": "healthy", "service": "Intervals.icu MCP"}
+    )
 
 
-# 3. Mount Starlette with both the healthcheck and the MCP SSE app
+# 3. Define routes for Starlette
 app = Starlette(
     routes=[
-        Route("/", health_check),
-        Mount("/", app=mcp.sse_app()),
+        Route("/", health_check, methods=["GET"]),
+        Route("/sse", handle_sse, methods=["GET"]),
+        Route("/messages", handle_messages, methods=["POST"]),
     ]
 )
 
