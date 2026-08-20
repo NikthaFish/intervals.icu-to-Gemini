@@ -2,8 +2,12 @@ import os
 from datetime import datetime, timedelta
 import httpx
 from mcp.server.fastmcp import FastMCP
+from starlette.applications import Starlette
+from starlette.responses import JSONResponse
+from starlette.routing import Mount, Route
+import uvicorn
 
-# Initialize FastMCP
+# 1. Initialize FastMCP Server
 mcp = FastMCP("IntervalsICU-Coach")
 
 ATHLETE_ID = os.getenv("INTERVALS_ATHLETE_ID", "")
@@ -89,14 +93,19 @@ async def schedule_workout(date: str, name: str, workout_description: str) -> st
         return f"Failed to schedule workout: {response.text}"
 
 
+# 2. Health check route for Railway
+async def health_check(request):
+    return JSONResponse({"status": "healthy", "service": "Intervals.icu MCP"})
+
+
+# 3. Mount Starlette with both the healthcheck and the MCP SSE app
+app = Starlette(
+    routes=[
+        Route("/", health_check),
+        Mount("/", app=mcp.sse_app()),
+    ]
+)
+
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 8080))
-    mcp.settings.host = "0.0.0.0"
-    mcp.settings.port = port
-    try:
-        # Disable strict localhost check so Railway public proxy can route to it
-        mcp.settings.transport_security.enable_dns_rebinding_protection = False
-    except Exception:
-        pass
-
-    mcp.run(transport="sse")
+    uvicorn.run(app, host="0.0.0.0", port=port)
