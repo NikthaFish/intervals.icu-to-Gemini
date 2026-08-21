@@ -20,7 +20,50 @@ st.set_page_config(
     initial_sidebar_state="collapsed",
 )
 
-st.title("🚴 Training Coach & Intervals Lab")
+# Athletic Dark Mode Styling
+st.markdown(
+    """
+    <style>
+    #MainMenu {visibility: hidden;}
+    footer {visibility: hidden;}
+    header {visibility: hidden;}
+    
+    .block-container {
+        padding-top: 1.2rem !important;
+        padding-bottom: 5rem !important;
+        max-width: 700px !important;
+    }
+    
+    h1 {
+        font-size: 1.5rem !important;
+        font-weight: 700 !important;
+        letter-spacing: -0.5px !important;
+        margin-bottom: 0.5rem !important;
+        color: #F8FAFC !important;
+    }
+    
+    .stChatMessage {
+        border-radius: 14px !important;
+        padding: 0.85rem 1.1rem !important;
+        margin-bottom: 0.75rem !important;
+        border: 1px solid rgba(255, 255, 255, 0.08) !important;
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.2) !important;
+    }
+    
+    [data-testid="stChatMessage"]:has([data-testid="chatAvatarIcon-user"]) {
+        background-color: #1E293B !important;
+    }
+    
+    [data-testid="stChatMessage"]:has([data-testid="chatAvatarIcon-assistant"]) {
+        background-color: #0F172A !important;
+        border-left: 3px solid #00E5FF !important;
+    }
+    </style>
+""",
+    unsafe_allow_html=True,
+)
+
+st.title("🚴 Training Coach & Lab")
 
 # ---------------------------------------------------------
 # 2. Secrets & API Setup
@@ -34,21 +77,19 @@ INTERVALS_ATHLETE_ID = st.secrets.get(
 )
 
 if not GEMINI_API_KEY or not INTERVALS_API_KEY or not INTERVALS_ATHLETE_ID:
-    st.error(
-        "⚠️ Missing API Keys! Please configure GEMINI_API_KEY, INTERVALS_API_KEY, and INTERVALS_ATHLETE_ID in Streamlit Secrets."
-    )
+    st.error("⚠️ Missing API Keys in Streamlit Secrets.")
     st.stop()
 
 BASE_URL = f"https://intervals.icu/api/v1/athlete/{INTERVALS_ATHLETE_ID}"
 AUTH = ("API_KEY", INTERVALS_API_KEY)
 
 # ---------------------------------------------------------
-# 3. Complete Intervals.icu API Tools
+# 3. Intervals.icu API Tools
 # ---------------------------------------------------------
 
 
 def get_athlete_profile() -> str:
-    """Fetches athlete baseline info including weight, cycling FTP, running thresholds (LTHR), max heart rate, and configured zones."""
+    """Fetches athlete profile: weight, cycling FTP, running thresholds, max HR, and zones."""
     try:
         res = httpx.get(f"{BASE_URL}", auth=AUTH, timeout=10.0)
         if res.status_code != 200:
@@ -75,14 +116,14 @@ def get_athlete_profile() -> str:
         return (
             f"### Athlete Profile: {name}\n"
             f"- **Weight**: {weight_str}\n"
-            f"### Sport Thresholds:\n" + "\n".join(sport_lines)
+            f"### Thresholds:\n" + "\n".join(sport_lines)
         )
     except Exception as e:
         return f"Request failed: {str(e)}"
 
 
 def get_recent_activities(days: int = 7) -> str:
-    """Fetches a list of completed activities (rides, runs, swims) over the last N days with summary metrics."""
+    """Fetches completed activities over the last N days with summary metrics."""
     oldest = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
     newest = datetime.now().strftime("%Y-%m-%d")
     url = f"{BASE_URL}/activities?oldest={oldest}&newest={newest}"
@@ -93,14 +134,14 @@ def get_recent_activities(days: int = 7) -> str:
             return f"Error: {res.text}"
         activities = res.json()
         if not activities:
-            return f"No activities found in the last {days} days."
+            return f"No activities recorded in the last {days} days."
 
         summary = []
         for a in activities:
             act_id = a.get("id")
             summary.append(
                 f"- **ID: `{act_id}`** | **{a.get('start_date_local', '')[:10]}** [{a.get('type')}] **{a.get('name')}**\n"
-                f"  Duration: {round(a.get('moving_time', 0)/60, 1)}m | Load/TSS: {a.get('icu_training_load', 'N/A')} | "
+                f"  Duration: {round(a.get('moving_time', 0)/60, 1)}m | TSS/Load: {a.get('icu_training_load', 'N/A')} | "
                 f"Avg Watts: {a.get('icu_weighted_avg_watts', 'N/A')}W | HR: {a.get('average_heartrate', 'N/A')} bpm | RPE: {a.get('perceived_exertion', 'N/A')}"
             )
         return "\n\n".join(summary)
@@ -109,7 +150,7 @@ def get_recent_activities(days: int = 7) -> str:
 
 
 def get_activity_details(activity_id: str) -> str:
-    """Fetches deep interval data, aerobic decoupling (cardiac drift), efficiency factor (EF), and interval compliance for a specific activity ID."""
+    """Fetches interval breakdown, cardiac drift (decoupling), and efficiency factor for an activity."""
     url = f"https://intervals.icu/api/v1/activity/{activity_id}"
     try:
         res = httpx.get(url, auth=AUTH, timeout=12.0)
@@ -125,7 +166,6 @@ def get_activity_details(activity_id: str) -> str:
         avg_hr = data.get("average_heartrate", "N/A")
         cadence = data.get("average_cadence", "N/A")
 
-        # Extract interval breakdown
         intervals_summary = []
         for idx, i in enumerate(data.get("icu_intervals", [])):
             if i.get("type") in ["WORK", "RECOVERY", "WARMUP", "COOLDOWN"]:
@@ -133,7 +173,7 @@ def get_activity_details(activity_id: str) -> str:
                 watts = round(i.get("average_watts", 0))
                 hr = round(i.get("average_heartrate", 0))
                 intervals_summary.append(
-                    f"  - Interval {idx+1} ({i.get('type')}): {dur}m @ {watts}W, {hr} bpm"
+                    f"  - Set {idx+1} ({i.get('type')}): {dur}m @ {watts}W, {hr} bpm"
                 )
 
         intervals_str = (
@@ -143,18 +183,17 @@ def get_activity_details(activity_id: str) -> str:
         )
 
         return (
-            f"### Activity Diagnostics: {name} ({date})\n"
-            f"- **Normalized Power**: {np_watts}W | **Avg HR**: {avg_hr} bpm | **Avg Cadence**: {cadence} rpm\n"
-            f"- **Aerobic Decoupling (Drift)**: {decoupling}% (Ideal is < 5%)\n"
-            f"- **Efficiency Factor (EF)**: {ef}\n"
-            f"### Key Interval Sets:\n{intervals_str}"
+            f"### Diagnostics: {name} ({date})\n"
+            f"- **NP**: {np_watts}W | **Avg HR**: {avg_hr} bpm | **Cadence**: {cadence} rpm\n"
+            f"- **Aerobic Decoupling**: {decoupling}% | **EF**: {ef}\n"
+            f"### Interval Breakdown:\n{intervals_str}"
         )
     except Exception as e:
         return f"Request failed: {str(e)}"
 
 
 def get_wellness_and_load(days: int = 7) -> str:
-    """Fetches daily wellness logs including CTL (Fitness), ATL (Fatigue), TSB (Form/Freshness), HRV, Resting Heart Rate, and Sleep Quality."""
+    """Fetches daily wellness logs: CTL (Fitness), ATL (Fatigue), TSB (Form), HRV, RHR, Sleep."""
     oldest = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
     newest = datetime.now().strftime("%Y-%m-%d")
     url = f"{BASE_URL}/wellness?oldest={oldest}&newest={newest}"
@@ -170,8 +209,8 @@ def get_wellness_and_load(days: int = 7) -> str:
         report = []
         for day in data:
             report.append(
-                f"- **{day.get('id')}**: Fitness (CTL): {day.get('ctl', 'N/A')} | Fatigue (ATL): {day.get('atl', 'N/A')} | "
-                f"Form (Ramp): {day.get('rampRate', 'N/A')} | RHR: {day.get('restingHR', 'N/A')} bpm | HRV: {day.get('hrv', 'N/A')} | Sleep: {day.get('sleepQuality', 'N/A')}/5"
+                f"- **{day.get('id')}**: CTL: {day.get('ctl', 'N/A')} | ATL: {day.get('atl', 'N/A')} | "
+                f"Form: {day.get('rampRate', 'N/A')} | RHR: {day.get('restingHR', 'N/A')} bpm | HRV: {day.get('hrv', 'N/A')} | Sleep: {day.get('sleepQuality', 'N/A')}/5"
             )
         return "### Wellness & Load History:\n" + "\n".join(report)
     except Exception as e:
@@ -179,7 +218,7 @@ def get_wellness_and_load(days: int = 7) -> str:
 
 
 def get_power_curve(days: int = 42) -> str:
-    """Retrieves athlete peak power curve durations (5s, 1m, 5m, 20m, 60m) over a rolling window (e.g. 42 or 84 days)."""
+    """Retrieves athlete peak power curve durations over a rolling window."""
     url = f"{BASE_URL}/power-curves?days={days}"
     try:
         res = httpx.get(url, auth=AUTH, timeout=10.0)
@@ -187,9 +226,8 @@ def get_power_curve(days: int = 42) -> str:
             return f"Error: {res.text}"
         curves = res.json()
         if not curves:
-            return "No power duration curve found for this period."
+            return "No power curve found."
 
-        # Parse key durations
         best_efforts = curves[0].get("curves", [{}])[0]
         peaks = []
         for sec, label in [
@@ -199,10 +237,9 @@ def get_power_curve(days: int = 42) -> str:
             (1200, "20m (Threshold)"),
             (3600, "60m (Hour)"),
         ]:
-            val = best_efforts.get(str(sec), "N/A")
-            peaks.append(f"- **{label}**: {val}W")
+            peaks.append(f"- **{label}**: {best_efforts.get(str(sec), 'N/A')}W")
 
-        return f"### Power Duration Best Efforts (Last {days} Days):\n" + "\n".join(
+        return f"### Power Duration Curve (Last {days} Days):\n" + "\n".join(
             peaks
         )
     except Exception as e:
@@ -210,7 +247,7 @@ def get_power_curve(days: int = 42) -> str:
 
 
 def get_calendar_events(days_ahead: int = 7, days_past: int = 1) -> str:
-    """Checks the athlete's calendar for upcoming planned workouts, rest days, or scheduled race events."""
+    """Checks the athlete's calendar for upcoming planned workouts or races."""
     oldest = (datetime.now() - timedelta(days=days_past)).strftime("%Y-%m-%d")
     newest = (datetime.now() + timedelta(days=days_ahead)).strftime("%Y-%m-%d")
     url = f"{BASE_URL}/events?oldest={oldest}&newest={newest}"
@@ -221,14 +258,14 @@ def get_calendar_events(days_ahead: int = 7, days_past: int = 1) -> str:
             return f"Error: {res.text}"
         events = res.json()
         if not events:
-            return "No calendar events or planned workouts found in this timeframe."
+            return "No calendar events found."
 
         summary = []
         for ev in events:
             date = ev.get("start_date_local", "")[:10]
-            name = ev.get("name", "Workout")
-            category = ev.get("category", "WORKOUT")
-            summary.append(f"- **{date}** [{category}]: **{name}**")
+            summary.append(
+                f"- **{date}** [{ev.get('category', 'WORKOUT')}]: **{ev.get('name', 'Workout')}**"
+            )
         return "### Calendar Schedule:\n" + "\n".join(summary)
     except Exception as e:
         return f"Request failed: {str(e)}"
@@ -237,12 +274,7 @@ def get_calendar_events(days_ahead: int = 7, days_past: int = 1) -> str:
 def schedule_structured_workout(
     date: str, name: str, workout_description: str, workout_type: str = "Ride"
 ) -> str:
-    """
-    Schedules a structured workout to the Intervals calendar (syncs automatically to COROS/Wahoo/Garmin).
-    'date' format: YYYY-MM-DD
-    'workout_type': 'Ride' or 'Run'
-    'workout_description': Intervals.icu format (e.g. 'Warmup\\n- 10m 60%\\nMain Set\\n- 2x 15m 90% 5m 55%\\nCooldown\\n- 5m 50%')
-    """
+    """Schedules a structured workout to the Intervals calendar."""
     url = f"{BASE_URL}/events"
     payload = {
         "start_date_local": f"{date}T07:00:00",
@@ -260,7 +292,91 @@ def schedule_structured_workout(
 
 
 # ---------------------------------------------------------
-# 4. Coach System Prompt & Persona
+# 4. Configurable Weekly / Daily Digest Exporter
+# ---------------------------------------------------------
+with st.expander("📥 Export Training Digest (Sync to Notebook)", expanded=False):
+    st.write(
+        "Generate a structured Markdown summary to upload/paste into your Gemini Notebook."
+    )
+
+    days_choice = st.radio(
+        "Select Timeframe Window:",
+        options=[1, 3, 7],
+        format_func=lambda x: (
+            f"Last 1 Day (Today)" if x == 1 else f"Last {x} Days"
+        ),
+        horizontal=True,
+    )
+
+    if st.button(
+        f"⚡ Generate {days_choice}-Day Digest", use_container_width=True
+    ):
+        with st.spinner("Compiling training digest..."):
+            client = genai.Client(api_key=GEMINI_API_KEY)
+
+            # Fetch fresh data for the exact window
+            raw_activities = get_recent_activities(days=days_choice)
+            raw_wellness = get_wellness_and_load(days=days_choice)
+            raw_profile = get_athlete_profile()
+
+            digest_prompt = f"""
+            You are a master endurance sports coach. Synthesize the following athlete data into a clean, executive Markdown Training Digest.
+            This document will be saved as context in the athlete's long-term training notebook.
+            
+            Timeframe: Last {days_choice} day(s).
+            
+            Data Provided:
+            {raw_profile}
+            
+            Completed Activities:
+            {raw_activities}
+            
+            Wellness, Fatigue & Form:
+            {raw_wellness}
+            
+            Formatting Structure:
+            # 📊 Training & Recovery Digest ({datetime.now().strftime('%Y-%m-%d')})
+            **Window**: Last {days_choice} Day(s)
+            
+            ## 1. Executive Summary & Training Load
+            - CTL (Fitness), ATL (Fatigue), TSB (Form/Freshness)
+            - Total volume/TSS completed in this window
+            
+            ## 2. Key Completed Workouts & Quality
+            - Breakdown of rides/runs with Normalized Power, HR decoupling/drift, and interval execution quality
+            
+            ## 3. Physiological Readiness & Recovery
+            - Sleep, HRV trends, resting HR, and perceived fatigue status
+            
+            ## 4. Coach's Tactical Directives
+            - 2-3 bullet points on what to prioritize next based on these numbers (e.g. carb fueling, durability, intensity targets).
+            """
+
+            try:
+                summary_resp = client.models.generate_content(
+                    model="gemini-3.5-flash-lite", contents=digest_prompt
+                )
+                st.session_state["digest_md"] = summary_resp.text
+                st.session_state["digest_days"] = days_choice
+            except Exception as e:
+                st.error(f"Failed to generate digest: {str(e)}")
+
+    if "digest_md" in st.session_state:
+        st.markdown("---")
+        st.markdown(st.session_state["digest_md"])
+
+        # Download Button for the Notebook
+        filename = f"Training_Digest_{datetime.now().strftime('%Y-%m-%d')}_{st.session_state.get('digest_days', 7)}d.md"
+        st.download_button(
+            label="⬇️ Download Markdown File",
+            data=st.session_state["digest_md"],
+            file_name=filename,
+            mime="text/markdown",
+            use_container_width=True,
+        )
+
+# ---------------------------------------------------------
+# 5. Coach System Prompt & Persona
 # ---------------------------------------------------------
 SYSTEM_INSTRUCTION = """
 You are "Training Coach" — a seasoned endurance coach with deep expertise in exercise physiology, sports nutrition, and low-volume training optimization.
@@ -274,7 +390,7 @@ Your principles:
 """
 
 # ---------------------------------------------------------
-# 5. Mobile Chat Interface
+# 6. Mobile Chat Interface
 # ---------------------------------------------------------
 if "messages" not in st.session_state:
     st.session_state.messages = []
@@ -290,10 +406,8 @@ if prompt := st.chat_input("Ask your coach anything..."):
     with st.chat_message("user"):
         st.markdown(prompt)
 
-    # Initialize Client
     client = genai.Client(api_key=GEMINI_API_KEY)
 
-    # Tool List
     tool_belt = [
         get_athlete_profile,
         get_recent_activities,
@@ -314,9 +428,7 @@ if prompt := st.chat_input("Ask your coach anything..."):
         with st.spinner("Analyzing Intervals.icu data..."):
             try:
                 response = client.models.generate_content(
-                    model="gemini-3.6-flash",
-                    contents=prompt,
-                    config=config,
+                    model="gemini-3.5-flash-lite", contents=prompt, config=config
                 )
                 output = (
                     response.text
