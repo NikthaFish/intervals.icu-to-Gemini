@@ -27,42 +27,61 @@ import streamlit as st
 
 st.set_page_config(page_title="Training Coach", page_icon="⚡", layout="centered")
 
-st.markdown("""
+st.markdown(
+    """
 <style>
-    /* Reduce top padding for mobile viewports */
+    /* Remove excess top whitespace and constrain layout width */
     .block-container {
-        padding-top: 1.5rem;
-        padding-bottom: 5rem;
-        padding-left: 1rem;
-        padding-right: 1rem;
-        max-width: 720px;
+        padding-top: 2rem !important;
+        padding-bottom: 6rem !important;
+        padding-left: 1rem !important;
+        padding-right: 1rem !important;
+        max-width: 680px;
     }
-    
-    /* Card styling for expanders and containers */
+
+    /* Style the main expander/digest card */
     div[data-testid="stExpander"] {
+        background-color: #FFFFFF;
         border: 1px solid #E2E8F0;
         border-radius: 12px;
-        background-color: #FFFFFF;
-        box-shadow: 0 1px 3px rgba(0,0,0,0.05);
-        margin-bottom: 1rem;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.04);
+        margin-bottom: 1.5rem;
+        overflow: hidden;
     }
-    
-    /* Make buttons full-width and touch-friendly */
+
+    /* Polish the expander header */
+    div[data-testid="stExpander"] summary {
+        font-weight: 600;
+        color: #1E293B;
+        padding: 0.75rem 1rem;
+    }
+
+    /* Action button styling */
     div.stButton > button {
         width: 100%;
+        background-color: #2563EB;
+        color: white;
+        border: none;
         border-radius: 8px;
+        padding: 0.65rem 1rem;
         font-weight: 600;
-        padding: 0.6rem 1rem;
-        transition: all 0.2s ease;
+        font-size: 0.95rem;
     }
-    
-    /* Fix chat input bar styling */
+    div.stButton > button:hover {
+        background-color: #1D4ED8;
+        color: white;
+    }
+
+    /* Chat input anchored cleanly at the bottom */
     div[data-testid="stChatInput"] {
+        max-width: 680px;
         border-radius: 12px;
+        border: 1px solid #CBD5E1;
     }
 </style>
-""", unsafe_allow_html=True)
-
+""",
+    unsafe_allow_html=True,
+)
 # ---------------------------------------------------------
 # 2. Secrets & API Setup
 # ---------------------------------------------------------
