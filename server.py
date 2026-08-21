@@ -22,60 +22,46 @@ st.set_page_config(
 
 # Athletic Dark Mode Styling
 
-st.title("Gemini Training Coach")
+# pyrefly: ignore [missing-import]
+import streamlit as st
 
-st.markdown(
-    """
-    <style>
-    /* Hide Streamlit default header, footer, and menu */
-    #MainMenu {visibility: hidden;}
-    footer {visibility: hidden;}
-    header {visibility: hidden;}
-    
-    /* Reduce top padding for iPhone full-screen look */
+st.set_page_config(page_title="Training Coach", page_icon="⚡", layout="centered")
+
+st.markdown("""
+<style>
+    /* Reduce top padding for mobile viewports */
     .block-container {
-        padding-top: 1.5rem !important;
-        padding-bottom: 5rem !important;
-        max-width: 700px !important;
+        padding-top: 1.5rem;
+        padding-bottom: 5rem;
+        padding-left: 1rem;
+        padding-right: 1rem;
+        max-width: 720px;
     }
     
-    /* Sleek Title Styling */
-    h1 {
-        font-size: 1.6rem !important;
-        font-weight: 700 !important;
-        letter-spacing: -0.5px !important;
-        margin-bottom: 1rem !important;
-        color: #F8FAFC !important;
+    /* Card styling for expanders and containers */
+    div[data-testid="stExpander"] {
+        border: 1px solid #E2E8F0;
+        border-radius: 12px;
+        background-color: #FFFFFF;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+        margin-bottom: 1rem;
     }
     
-    /* Chat Message Bubbles */
-    .stChatMessage {
-        border-radius: 14px !important;
-        padding: 0.85rem 1.1rem !important;
-        margin-bottom: 0.75rem !important;
-        border: 1px solid rgba(255, 255, 255, 0.08) !important;
-        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.2) !important;
+    /* Make buttons full-width and touch-friendly */
+    div.stButton > button {
+        width: 100%;
+        border-radius: 8px;
+        font-weight: 600;
+        padding: 0.6rem 1rem;
+        transition: all 0.2s ease;
     }
     
-    /* User Message Style */
-    [data-testid="stChatMessage"]:has([data-testid="chatAvatarIcon-user"]) {
-        background-color: #1E293B !important;
+    /* Fix chat input bar styling */
+    div[data-testid="stChatInput"] {
+        border-radius: 12px;
     }
-    
-    /* Coach Message Style */
-    [data-testid="stChatMessage"]:has([data-testid="chatAvatarIcon-assistant"]) {
-        background-color: #0F172A !important;
-        border-left: 3px solid #00E5FF !important;
-    }
-
-    /* Chat Input Bar fixed at bottom */
-    .stChatInput {
-        border-radius: 20px !important;
-    }
-    </style>
-""",
-    unsafe_allow_html=True,
-)
+</style>
+""", unsafe_allow_html=True)
 
 # ---------------------------------------------------------
 # 2. Secrets & API Setup
