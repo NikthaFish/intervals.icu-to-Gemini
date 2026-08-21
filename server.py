@@ -20,63 +20,55 @@ st.set_page_config(
     initial_sidebar_state="collapsed",
 )
 
-# Athletic Dark Mode Styling
-
-# pyrefly: ignore [missing-import]
-import streamlit as st
-
-st.set_page_config(page_title="Training Coach", page_icon="⚡", layout="centered")
-
+# ---------------------------------------------------------
+# Refined Streamlit Styling
+# ---------------------------------------------------------
 st.markdown(
     """
 <style>
-    /* Remove excess top whitespace and constrain layout width */
+    /* Clean up the main block container padding */
     .block-container {
         padding-top: 2rem !important;
         padding-bottom: 6rem !important;
-        padding-left: 1rem !important;
-        padding-right: 1rem !important;
-        max-width: 680px;
     }
 
     /* Style the main expander/digest card */
     div[data-testid="stExpander"] {
-        background-color: #FFFFFF;
-        border: 1px solid #E2E8F0;
         border-radius: 12px;
-        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.04);
+        border: 1px solid rgba(15, 23, 42, 0.1);
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
         margin-bottom: 1.5rem;
-        overflow: hidden;
     }
 
     /* Polish the expander header */
     div[data-testid="stExpander"] summary {
         font-weight: 600;
-        color: #1E293B;
         padding: 0.75rem 1rem;
     }
 
-    /* Action button styling */
+    /* Button enhancements */
     div.stButton > button {
-        width: 100%;
-        background-color: #2563EB;
-        color: white;
-        border: none;
         border-radius: 8px;
-        padding: 0.65rem 1rem;
         font-weight: 600;
-        font-size: 0.95rem;
+        transition: all 0.2s ease;
     }
+    
     div.stButton > button:hover {
-        background-color: #1D4ED8;
-        color: white;
+        transform: translateY(-1px);
+        box-shadow: 0 4px 12px rgba(37, 99, 235, 0.2);
     }
 
-    /* Chat input anchored cleanly at the bottom */
-    div[data-testid="stChatInput"] {
-        max-width: 680px;
+    /* Chat input styling */
+    .stChatInputContainer {
         border-radius: 12px;
-        border: 1px solid #CBD5E1;
+        box-shadow: 0 -4px 12px rgba(0,0,0,0.05);
+    }
+    
+    /* Make chat messages look polished */
+    div[data-testid="stChatMessage"] {
+        padding: 1rem;
+        border-radius: 12px;
+        border: 1px solid rgba(15, 23, 42, 0.05);
     }
 </style>
 """,
@@ -326,7 +318,9 @@ with st.expander("📥 Export Training Digest (Sync to Notebook)", expanded=Fals
     )
 
     if st.button(
-        f"⚡ Generate {days_choice}-Day Digest", use_container_width=True
+        f"⚡ Generate {days_choice}-Day Digest",
+        use_container_width=True,
+        type="primary",
     ):
         with st.spinner("Compiling training digest..."):
             client = genai.Client(api_key=GEMINI_API_KEY)
