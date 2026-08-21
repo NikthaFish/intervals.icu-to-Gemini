@@ -28,7 +28,7 @@ st.markdown(
 <style>
     /* Clean up the main block container padding */
     .block-container {
-        padding-top: 2rem !important;
+        padding-top: 3.5rem !important;
         padding-bottom: 6rem !important;
     }
 
@@ -74,6 +74,12 @@ st.markdown(
 """,
     unsafe_allow_html=True,
 )
+# ---------------------------------------------------------
+# Page Header
+# ---------------------------------------------------------
+st.title("🚴 Training Coach")
+st.caption("Your AI-powered endurance training companion.")
+
 # ---------------------------------------------------------
 # 2. Secrets & API Setup
 # ---------------------------------------------------------
