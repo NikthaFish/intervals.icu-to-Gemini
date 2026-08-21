@@ -21,27 +21,34 @@ st.set_page_config(
 )
 
 # Athletic Dark Mode Styling
+
+st.title("Gemini Training Coach")
+
 st.markdown(
     """
     <style>
+    /* Hide Streamlit default header, footer, and menu */
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
     header {visibility: hidden;}
     
+    /* Reduce top padding for iPhone full-screen look */
     .block-container {
-        padding-top: 1.2rem !important;
+        padding-top: 1.5rem !important;
         padding-bottom: 5rem !important;
         max-width: 700px !important;
     }
     
+    /* Sleek Title Styling */
     h1 {
-        font-size: 1.5rem !important;
+        font-size: 1.6rem !important;
         font-weight: 700 !important;
         letter-spacing: -0.5px !important;
-        margin-bottom: 0.5rem !important;
+        margin-bottom: 1rem !important;
         color: #F8FAFC !important;
     }
     
+    /* Chat Message Bubbles */
     .stChatMessage {
         border-radius: 14px !important;
         padding: 0.85rem 1.1rem !important;
@@ -50,20 +57,25 @@ st.markdown(
         box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.2) !important;
     }
     
+    /* User Message Style */
     [data-testid="stChatMessage"]:has([data-testid="chatAvatarIcon-user"]) {
         background-color: #1E293B !important;
     }
     
+    /* Coach Message Style */
     [data-testid="stChatMessage"]:has([data-testid="chatAvatarIcon-assistant"]) {
         background-color: #0F172A !important;
         border-left: 3px solid #00E5FF !important;
+    }
+
+    /* Chat Input Bar fixed at bottom */
+    .stChatInput {
+        border-radius: 20px !important;
     }
     </style>
 """,
     unsafe_allow_html=True,
 )
-
-st.title("🚴 Training Coach & Lab")
 
 # ---------------------------------------------------------
 # 2. Secrets & API Setup
